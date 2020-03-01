@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">УК ВОЕНВЕД</string>
+    <string name="back_pressed_warning">Для выхода нажмите "назад" еще раз</string>
+</resources>
