@@ -5,4 +5,6 @@ object Settings {
     const val MAIN_URL = "https://ukvoenved.ru/personal/"
     const val CUSTOM_UA = "VOENVED/Android"
 
+    const val FILECHOOSER_REQUEST_CODE = 25
+
 }
