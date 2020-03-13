@@ -7,20 +7,21 @@ import android.app.Activity
 import android.content.ClipData
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.net.Uri
-import android.os.Build
-import android.os.Bundle
-import android.os.Environment
-import android.os.Handler
+import android.os.*
 import android.provider.MediaStore
 import android.util.Log
 import android.view.View
 import android.webkit.*
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.databinding.DataBindingUtil
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelProviders
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import ru.voenvedapp.voenved.R
 import ru.voenvedapp.voenved.Settings
 import ru.voenvedapp.voenved.Settings.FILECHOOSER_REQUEST_CODE
@@ -32,7 +33,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), MainActivityViewModel.WebViewCallbacksListener {
 
     val TAG = MainActivity::class.java.simpleName
 
@@ -53,118 +54,39 @@ class MainActivity : AppCompatActivity() {
 
     // -----------------------------------------------------
 
-    private val webViewClient by lazy { object : WebViewClient() {
-        @TargetApi(Build.VERSION_CODES.N)
-        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-            view.loadUrl(request.url.toString())
-            return true
-        }
+    val swipeRefreshLayout: SwipeRefreshLayout by lazy { binding.swipeRefreshLayout }
 
-        // Для старых устройств
-        override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
-            view.loadUrl(url)
-            return true
-        }
+    private val webViewClient: WebViewClient by lazy { viewModel.webViewClient }
 
-
-    }}
-
-    private val webChromeClient by lazy { object : WebChromeClient() {
-
-        override fun onShowFileChooser(
-            webView: WebView?,
-            filePathCallback: ValueCallback<Array<Uri>>?,
-            fileChooserParams: FileChooserParams?
-        ): Boolean {
-            return if (requestFilePermission() && Build.VERSION.SDK_INT >= 21) {
-                file_path = filePathCallback
-                var takePictureIntent: Intent? = null
-                var includePhoto = false
-                /*-- checking the accept parameter to determine which intent(s) to include --*/paramCheck@ for (acceptTypes in fileChooserParams!!.acceptTypes) {
-                    val splitTypes = acceptTypes.split(", ?+")
-                        .toTypedArray() // although it's an array, it still seems to be the whole value; split it out into chunks so that we can detect multiple values
-                    for (acceptType in splitTypes) {
-                        when (acceptType) {
-                            "*/*" -> {
-                                includePhoto = true
-                                break@paramCheck
-                            }
-                            "image/*" -> includePhoto = true
-                        }
-                    }
-                }
-                if (fileChooserParams.acceptTypes.isEmpty()) { //no `accept` parameter was specified, allow both photo and video
-                    includePhoto = true
-                }
-                if (includePhoto) {
-                    takePictureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-                    if (takePictureIntent.resolveActivity(this@MainActivity.packageManager) != null) {
-                        var photoFile: File? = null
-                        try {
-                            photoFile = createImage()
-                            takePictureIntent.putExtra("PhotoPath", cam_file_data)
-                        } catch (ex: IOException) {
-                            Log.e(TAG, "Image file creation failed", ex)
-                        }
-                        if (photoFile != null) {
-                            cam_file_data = "file:" + photoFile.absolutePath
-                            takePictureIntent.putExtra(
-                                MediaStore.EXTRA_OUTPUT,
-                                Uri.fromFile(photoFile)
-                            )
-                        } else {
-                            cam_file_data = null
-                            takePictureIntent = null
-                        }
-                    }
-                }
-
-                val contentSelectionIntent = Intent(Intent.ACTION_GET_CONTENT)
-                contentSelectionIntent.addCategory(Intent.CATEGORY_OPENABLE)
-                contentSelectionIntent.type = file_type
-
-                if (multiple_files) {
-                    contentSelectionIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                }
-
-
-                val chooserIntent = Intent(Intent.ACTION_CHOOSER)
-                chooserIntent.putExtra(Intent.EXTRA_INTENT, contentSelectionIntent)
-                chooserIntent.putExtra(Intent.EXTRA_TITLE, "File chooser")
-
-                chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, takePictureIntent)
-                startActivityForResult(chooserIntent, FILECHOOSER_REQUEST_CODE)
-                true
-            } else {
-                false
-            }
-        }
-    }}
-
-    private var mUploadMessage: ValueCallback<*>? = null
-
-
+    private val webChromeClient: WebChromeClient by lazy { viewModel.webChromeClient }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        viewModel = ViewModelProviders.of(this).get(MainActivityViewModel::class.java)
+        viewModel = ViewModelProvider(this)[MainActivityViewModel::class.java]
         binding = DataBindingUtil.setContentView<ActivityMainBinding>(this, R.layout.activity_main)
+        viewModel.listener = this
+
+        swipeRefreshLayout.setOnRefreshListener { binding.mainWebView.reload() }
 
         binding.mainWebView.webViewClient = webViewClient
         binding.mainWebView.webChromeClient = webChromeClient
-        binding.mainWebView.settings.javaScriptEnabled = true
-        binding.mainWebView.settings.allowUniversalAccessFromFileURLs = true
-        binding.mainWebView.settings.allowFileAccessFromFileURLs = true
-        binding.mainWebView.settings.userAgentString = Settings.CUSTOM_UA
-        binding.mainWebView.settings.setAppCacheEnabled(false);
-        binding.mainWebView.settings.cacheMode = WebSettings.LOAD_NO_CACHE;
 
-        binding.mainWebView.scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
+        with(binding.mainWebView) {
+            settings.javaScriptEnabled = true
+            settings.allowUniversalAccessFromFileURLs = true
+            settings.allowFileAccessFromFileURLs = true
+            settings.userAgentString = Settings.CUSTOM_UA
+            settings.setAppCacheEnabled(false);
+            settings.cacheMode = WebSettings.LOAD_NO_CACHE;
 
-        binding.mainWebView.loadUrl(Settings.MAIN_URL)
+            scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
+
+            binding.mainWebView.loadUrl(Settings.MAIN_URL)
+
+            loadUrl(Settings.MAIN_URL)
+        }
     }
-
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, intent: Intent?) {
         if (Build.VERSION.SDK_INT >= 21) {
@@ -223,7 +145,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /*-- checking and asking for required file permissions --*/
-    fun requestFilePermission(): Boolean {
+    private fun requestFilePermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= 23 && (ContextCompat.checkSelfPermission(
                 this,
                 Manifest.permission.WRITE_EXTERNAL_STORAGE
@@ -271,6 +193,81 @@ class MainActivity : AppCompatActivity() {
         this.doubleBackToExitPressedOnce = true
         Handler().postDelayed({ doubleBackToExitPressedOnce = false }, 2000)
 
+    }
+
+
+
+    override fun onPageFinished(view: WebView?, url: String?) {
+        swipeRefreshLayout.isRefreshing = false
+    }
+
+    override fun onShowFileChooser(
+        webView: WebView?,
+        filePathCallback: ValueCallback<Array<Uri>>?,
+        fileChooserParams: WebChromeClient.FileChooserParams?
+    ): Boolean {
+        return if (requestFilePermission() && Build.VERSION.SDK_INT >= 21) {
+            file_path = filePathCallback
+            var takePictureIntent: Intent? = null
+            var includePhoto = false
+            /*-- checking the accept parameter to determine which intent(s) to include --*/paramCheck@ for (acceptTypes in fileChooserParams!!.acceptTypes) {
+                val splitTypes = acceptTypes.split(", ?+")
+                    .toTypedArray() // although it's an array, it still seems to be the whole value; split it out into chunks so that we can detect multiple values
+                for (acceptType in splitTypes) {
+                    when (acceptType) {
+                        "*/*" -> {
+                            includePhoto = true
+                            break@paramCheck
+                        }
+                        "image/*" -> includePhoto = true
+                    }
+                }
+            }
+            if (fileChooserParams.acceptTypes.isEmpty()) { //no `accept` parameter was specified, allow both photo and video
+                includePhoto = true
+            }
+            if (includePhoto) {
+                takePictureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+                if (takePictureIntent.resolveActivity(this@MainActivity.packageManager) != null) {
+                    var photoFile: File? = null
+                    try {
+                        photoFile = createImage()
+                        takePictureIntent.putExtra("PhotoPath", cam_file_data)
+                    } catch (ex: IOException) {
+                        Log.e(TAG, "Image file creation failed", ex)
+                    }
+                    if (photoFile != null) {
+                        cam_file_data = "file:" + photoFile.absolutePath
+                        takePictureIntent.putExtra(
+                            MediaStore.EXTRA_OUTPUT,
+                            Uri.fromFile(photoFile)
+                        )
+                    } else {
+                        cam_file_data = null
+                        takePictureIntent = null
+                    }
+                }
+            }
+
+            val contentSelectionIntent = Intent(Intent.ACTION_GET_CONTENT)
+            contentSelectionIntent.addCategory(Intent.CATEGORY_OPENABLE)
+            contentSelectionIntent.type = file_type
+
+            if (multiple_files) {
+                contentSelectionIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            }
+
+
+            val chooserIntent = Intent(Intent.ACTION_CHOOSER)
+            chooserIntent.putExtra(Intent.EXTRA_INTENT, contentSelectionIntent)
+            chooserIntent.putExtra(Intent.EXTRA_TITLE, "File chooser")
+
+            chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, takePictureIntent)
+            startActivityForResult(chooserIntent, Settings.FILECHOOSER_REQUEST_CODE)
+            true
+        } else {
+            false
+        }
     }
 
 }
