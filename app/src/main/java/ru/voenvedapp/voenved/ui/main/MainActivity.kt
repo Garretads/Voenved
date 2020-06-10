@@ -46,6 +46,7 @@ class MainActivity : AppCompatActivity(), MainActivityViewModel.WebViewCallbacks
 
     // data/header received after file selection
     private var file_data: ValueCallback<Uri>? = null
+
     // received file(s) temp. location
     private var file_path: ValueCallback<Array<Uri>>? = null
     private var cam_file_data: String? = null // for storing camera file information
@@ -56,7 +57,69 @@ class MainActivity : AppCompatActivity(), MainActivityViewModel.WebViewCallbacks
 
     val swipeRefreshLayout: SwipeRefreshLayout by lazy { binding.swipeRefreshLayout }
 
-    private val webViewClient: WebViewClient by lazy { viewModel.webViewClient }
+    private val webViewClient by lazy {
+        object : WebViewClient() {
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                onPageFinished(view, url)
+            }
+
+            @TargetApi(Build.VERSION_CODES.N)
+            override fun shouldOverrideUrlLoading(
+                view: WebView,
+                request: WebResourceRequest
+            ): Boolean {
+
+                if (request.url.toString().contains(Settings.DEEP_LINK_SBER)) {
+
+                    val intent = Intent(Intent.ACTION_VIEW)
+                    intent.data = request.url
+                    return if (intent.resolveActivity(packageManager) != null) {
+                        startActivity(intent)
+                        true;
+                    } else {
+                        Toast.makeText(
+                            this@MainActivity,
+                            R.string.no_app_can_handle_deeplink,
+                            Toast.LENGTH_SHORT
+                        )
+                            .show()
+                        false
+                    }
+                } else {
+                    view.loadUrl(request.url.toString())
+                    return true
+                }
+            }
+
+            // Для старых устройств
+            override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
+                if (url.contains(Settings.DEEP_LINK_SBER)) {
+
+                    val intent = Intent(Intent.ACTION_VIEW)
+                    intent.data = Uri.parse(url)
+                    return if (intent.resolveActivity(packageManager) != null) {
+                        startActivity(intent)
+                        true;
+                    } else {
+                        Toast.makeText(
+                            this@MainActivity,
+                            R.string.no_app_can_handle_deeplink,
+                            Toast.LENGTH_SHORT
+                        )
+                            .show()
+                        false
+                    }
+                } else {
+                    view.loadUrl(url)
+                    return true
+                }
+            }
+
+
+        }
+    }
 
     private val webChromeClient: WebChromeClient by lazy { viewModel.webChromeClient }
 
@@ -194,7 +257,6 @@ class MainActivity : AppCompatActivity(), MainActivityViewModel.WebViewCallbacks
         Handler().postDelayed({ doubleBackToExitPressedOnce = false }, 2000)
 
     }
-
 
 
     override fun onPageFinished(view: WebView?, url: String?) {
